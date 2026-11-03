@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { ApiError, createNote, deleteNote, listNotes, updateNote, type Note } from './api'
+import { Bookmarks } from './components/Bookmarks'
 import { NoteEditor, type SaveState } from './components/NoteEditor'
 import { Sidebar } from './components/Sidebar'
 
 type LoadState = 'loading' | 'ready' | 'error'
+type Tab = 'notes' | 'bookmarks'
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'notes', label: 'Notes' },
+  { id: 'bookmarks', label: 'Bookmarks' },
+]
 
 function sortNewestFirst(notes: Note[]): Note[] {
   return [...notes].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
@@ -14,6 +21,8 @@ function errorText(err: unknown): string {
 }
 
 export default function App() {
+  const [tab, setTab] = useState<Tab>('notes')
+
   const [notes, setNotes] = useState<Note[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [loadError, setLoadError] = useState('')
@@ -167,23 +176,43 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <Sidebar
-        notes={notes}
-        selectedId={selectedId}
-        disabled={listLocked}
-        creating={creating}
-        onCreate={() => void handleCreate()}
-        onSelect={showNote}
-      />
-      <main className="main">
-        {actionError && (
-          <p className="status status--error" role="alert">
-            {actionError}
-          </p>
-        )}
-        {main}
-      </main>
+    <div className="shell">
+      <nav className="tabs" aria-label="Sections">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={tab === item.id ? 'tab tab--active' : 'tab'}
+            aria-pressed={tab === item.id}
+            onClick={() => setTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'notes' ? (
+        <div className="app">
+          <Sidebar
+            notes={notes}
+            selectedId={selectedId}
+            disabled={listLocked}
+            creating={creating}
+            onCreate={() => void handleCreate()}
+            onSelect={showNote}
+          />
+          <main className="main">
+            {actionError && (
+              <p className="status status--error" role="alert">
+                {actionError}
+              </p>
+            )}
+            {main}
+          </main>
+        </div>
+      ) : (
+        <Bookmarks />
+      )}
     </div>
   )
 }
