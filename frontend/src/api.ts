@@ -11,6 +11,20 @@ export interface NoteInput {
   body: string
 }
 
+export interface Link {
+  id: number
+  url: string
+  title: string
+  tag: string
+  created_at: string
+}
+
+export interface LinkInput {
+  url: string
+  title: string
+  tag: string
+}
+
 const API_BASE: string = import.meta.env.VITE_API_URL ?? ''
 
 export class ApiError extends Error {
@@ -54,7 +68,11 @@ async function readErrorDetail(res: Response): Promise<string> {
   return fallback
 }
 
-async function send(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: NoteInput): Promise<Response> {
+async function send(
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  body?: NoteInput | LinkInput,
+): Promise<Response> {
   let res: Response
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -89,4 +107,19 @@ export async function updateNote(id: number, input: NoteInput): Promise<Note> {
 
 export async function deleteNote(id: number): Promise<void> {
   await send(`/api/notes/${id}`, 'DELETE')
+}
+
+export async function listLinks(tag?: string): Promise<Link[]> {
+  const query = tag ? `?tag=${encodeURIComponent(tag)}` : ''
+  const res = await send(`/api/links${query}`, 'GET')
+  return (await res.json()) as Link[]
+}
+
+export async function createLink(input: LinkInput): Promise<Link> {
+  const res = await send('/api/links', 'POST', input)
+  return (await res.json()) as Link
+}
+
+export async function deleteLink(id: number): Promise<void> {
+  await send(`/api/links/${id}`, 'DELETE')
 }

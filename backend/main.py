@@ -5,15 +5,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Iterator
 
+from urllib.parse import urlparse
+
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 DEFAULT_DB_PATH = "/home/ubuntu/app/data/notes.db"
 FRONTEND_DIST = Path("/home/ubuntu/app/frontend/dist")
 
 TITLE_MAX = 200
 BODY_MAX = 100000
+URL_MAX = 2000
+TAG_MAX = 50
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -22,10 +26,19 @@ CREATE TABLE IF NOT EXISTS notes (
     body TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-)
+);
+
+CREATE TABLE IF NOT EXISTS links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    tag TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
 """
 
 NOTE_COLUMNS = "id, title, body, created_at, updated_at"
+LINK_COLUMNS = "id, url, title, tag, created_at"
 
 
 class NoteCreate(BaseModel):
@@ -54,6 +67,29 @@ class NoteOut(BaseModel):
     updated_at: str
 
 
+class LinkCreate(BaseModel):
+    url: str = Field(..., max_length=URL_MAX)
+    title: str = Field("", max_length=TITLE_MAX)
+    tag: str = Field("", max_length=TAG_MAX)
+
+    @field_validator("url")
+    @classmethod
+    def require_http_url(cls, value: str) -> str:
+        # Only web links are stored; anything else (javascript:, file:, ...) is rejected.
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("url must be an http or https URL")
+        return value
+
+
+class LinkOut(BaseModel):
+    id: int
+    url: str
+    title: str
+    tag: str
+    created_at: str
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
@@ -69,7 +105,7 @@ async def lifespan(app: FastAPI):
     db_path = Path(os.environ.get("NOTES_DB_PATH", DEFAULT_DB_PATH))
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(_connect(str(db_path))) as conn, conn:
-        conn.execute(SCHEMA)
+        conn.executescript(SCHEMA)
     app.state.db_path = str(db_path)
     yield
 
@@ -91,6 +127,15 @@ def _get_note(db: sqlite3.Connection, note_id: int) -> dict:
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Note not found")
+    return dict(row)
+
+
+def _get_link(db: sqlite3.Connection, link_id: int) -> dict:
+    row = db.execute(
+        f"SELECT {LINK_COLUMNS} FROM links WHERE id = ?", (link_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Link not found")
     return dict(row)
 
 
@@ -135,6 +180,39 @@ def delete_note(note_id: int, db: DB) -> Response:
         cur = db.execute("DELETE FROM notes WHERE id = ?", (note_id,))
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Note not found")
+    return Response(status_code=204)
+
+
+@app.get("/api/links", response_model=list[LinkOut])
+def list_links(db: DB, tag: str | None = None):
+    # Omitted tag returns every link; a given tag matches exactly.
+    if tag is None:
+        rows = db.execute(
+            f"SELECT {LINK_COLUMNS} FROM links ORDER BY tag, id"
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"SELECT {LINK_COLUMNS} FROM links WHERE tag = ? ORDER BY tag, id", (tag,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/links", response_model=LinkOut, status_code=201)
+def create_link(payload: LinkCreate, db: DB):
+    with db:
+        cur = db.execute(
+            "INSERT INTO links (url, title, tag, created_at) VALUES (?, ?, ?, ?)",
+            (payload.url, payload.title, payload.tag, _now()),
+        )
+    return _get_link(db, cur.lastrowid)
+
+
+@app.delete("/api/links/{link_id}", status_code=204)
+def delete_link(link_id: int, db: DB) -> Response:
+    with db:
+        cur = db.execute("DELETE FROM links WHERE id = ?", (link_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Link not found")
     return Response(status_code=204)
 
 
