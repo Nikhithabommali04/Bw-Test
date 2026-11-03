@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ApiError, createLink, deleteLink, listLinks, type Link } from '../api'
 
 interface TagGroup {
@@ -17,6 +17,34 @@ function isHttpUrl(value: string): boolean {
 
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
+}
+
+// Copies text via the async Clipboard API when available (secure contexts only),
+// otherwise falls back to a hidden textarea and execCommand for plain HTTP.
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (window.isSecureContext && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  try {
+    textarea.select()
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
 }
 
 function sortNewestFirst(links: Link[]): Link[] {
@@ -56,6 +84,18 @@ export function Bookmarks() {
 
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [actionError, setActionError] = useState('')
+
+  const [copyFeedback, setCopyFeedback] = useState<{ id: number; message: string } | null>(null)
+  const copyTimerRef = useRef<number | null>(null)
+  const mountedRef = useRef(false)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     let ignore = false
@@ -114,6 +154,17 @@ export function Bookmarks() {
     }
   }
 
+  const handleCopy = async (link: Link) => {
+    const copied = await copyToClipboard(link.url)
+    if (!mountedRef.current) return
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    setCopyFeedback({ id: link.id, message: copied ? 'Copied' : 'Copy failed' })
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopyFeedback(null)
+      copyTimerRef.current = null
+    }, 2000)
+  }
+
   let list: ReactNode
   if (loading) {
     list = <p className="muted">Loading bookmarks…</p>
@@ -153,6 +204,17 @@ export function Bookmarks() {
                 >
                   {deletingId === link.id ? 'Deleting…' : 'Delete'}
                 </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void handleCopy(link)}
+                  aria-label={`Copy link for ${label}`}
+                >
+                  Copy link
+                </button>
+                <span className="muted" role="status">
+                  {copyFeedback?.id === link.id ? copyFeedback.message : ''}
+                </span>
               </li>
             )
           })}
