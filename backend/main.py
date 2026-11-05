@@ -216,6 +216,12 @@ def delete_link(link_id: int, db: DB) -> Response:
     return Response(status_code=204)
 
 
+@app.get("/health")
+def health():
+    # Liveness check; deliberately does not touch the database.
+    return {"status": "ok"}
+
+
 # Static frontend. Decided once at startup: if a built dist exists, serve it;
 # otherwise GET / returns a small JSON message. Routes above are registered
 # first, so /api paths never reach the SPA fallback below.
