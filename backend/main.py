@@ -222,6 +222,12 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/version")
+def version():
+    # Static build version; deliberately does not touch the database.
+    return {"version": "1.0.0"}
+
+
 # Static frontend. Decided once at startup: if a built dist exists, serve it;
 # otherwise GET / returns a small JSON message. Routes above are registered
 # first, so /api paths never reach the SPA fallback below.
