@@ -1,0 +1,13 @@
+# Local environment and secrets
+.venv/
+.env
+
+# SQLite databases
+*.db
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.mcp.json
+.env.*
